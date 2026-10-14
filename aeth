@@ -1,0 +1,10 @@
+#!/bin/sh
+# Aetheris Direct Execution Wrapper
+DIR="$(cd "$(dirname "$0")" && pwd)"
+
+if [ ! -f "$DIR/build/bin/aeth" ]; then
+    echo "[Aetheris] Auto-bootstrapping C11 toolchain..."
+    (cd "$DIR" && make bootstrap >/dev/null 2>&1)
+fi
+
+exec "$DIR/build/bin/aeth" "$@"

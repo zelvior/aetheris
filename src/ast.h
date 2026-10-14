@@ -13,9 +13,7 @@ typedef enum {
     EXPR_BINARY,
     EXPR_CALL,
     EXPR_ASSIGNMENT,
-    EXPR_SHOW,
-    EXPR_AWAIT,
-    EXPR_INFER
+    EXPR_SHOW
 } ExprType;
 
 typedef enum {
@@ -28,9 +26,7 @@ typedef enum {
     STMT_FUNCTION_DECL,
     STMT_COMPONENT_DECL,
     STMT_ROUTE_DECL,
-    STMT_REPLY,
-    STMT_SPAWN,
-    STMT_NEURAL_DECL
+    STMT_REPLY
 } StmtType;
 
 typedef struct Expr Expr;
@@ -73,13 +69,6 @@ struct Expr {
             Expr **props;
             size_t prop_count;
         } show;
-        struct {
-            Expr *expr;
-        } await_expr;
-        struct {
-            char *model_name;
-            Expr *input_expr;
-        } infer_expr;
     };
 };
 
@@ -122,7 +111,6 @@ struct Stmt {
             size_t param_count;
             TypeAnnotation return_type;
             Stmt *body;
-            bool is_async;
         } func_decl;
         struct {
             char *name;
@@ -139,13 +127,6 @@ struct Stmt {
             Expr *response_expr;
             int status_code;
         } reply_stmt;
-        struct {
-            Expr *task_call;
-        } spawn_stmt;
-        struct {
-            char *name;
-            Stmt *layers_body;
-        } neural_decl;
     };
 };
 
@@ -165,8 +146,6 @@ Expr* ast_create_binary(TokenType op, Expr *left, Expr *right, SourceLocation lo
 Expr* ast_create_call(const char *callee, Expr **args, size_t arg_count, SourceLocation loc);
 Expr* ast_create_assignment(const char *target, Expr *value, SourceLocation loc);
 Expr* ast_create_show(const char *widget_name, Expr **props, size_t prop_count, SourceLocation loc);
-Expr* ast_create_await(Expr *expr, SourceLocation loc);
-Expr* ast_create_infer(const char *model_name, Expr *input_expr, SourceLocation loc);
 
 Stmt* ast_create_expr_stmt(Expr *expr, SourceLocation loc);
 Stmt* ast_create_var_decl(const char *name, bool is_mut, bool is_const, TypeAnnotation type_ann, Expr *init, SourceLocation loc);
@@ -174,12 +153,10 @@ Stmt* ast_create_return_stmt(Expr *value, SourceLocation loc);
 Stmt* ast_create_if_stmt(Expr *cond, Stmt *then_b, Stmt *else_b, SourceLocation loc);
 Stmt* ast_create_while_stmt(Expr *cond, Stmt *body, SourceLocation loc);
 Stmt* ast_create_block_stmt(Stmt **stmts, size_t count, SourceLocation loc);
-Stmt* ast_create_func_decl(const char *name, Param *params, size_t param_count, TypeAnnotation ret_type, Stmt *body, bool is_async, SourceLocation loc);
+Stmt* ast_create_func_decl(const char *name, Param *params, size_t param_count, TypeAnnotation ret_type, Stmt *body, SourceLocation loc);
 Stmt* ast_create_component_decl(const char *name, Param *props, size_t prop_count, Stmt *render_body, SourceLocation loc);
 Stmt* ast_create_route_decl(const char *method, const char *path, Stmt *handler_body, SourceLocation loc);
 Stmt* ast_create_reply_stmt(Expr *response_expr, int status_code, SourceLocation loc);
-Stmt* ast_create_spawn_stmt(Expr *task_call, SourceLocation loc);
-Stmt* ast_create_neural_decl(const char *name, Stmt *layers_body, SourceLocation loc);
 
 Program* ast_create_program(Stmt **stmts, size_t count);
 

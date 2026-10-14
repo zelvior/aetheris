@@ -139,28 +139,6 @@ static Expr* parse_show_expression(Parser *parser, Token token) {
     return ast_create_show(widget_name, props, count, loc);
 }
 
-static Expr* parse_await_expression(Parser *parser, Token token) {
-    SourceLocation loc = {parser->lexer->filename, token.line, token.column};
-    Expr *inner_expr = parse_expression(parser);
-    return ast_create_await(inner_expr, loc);
-}
-
-static Expr* parse_infer_expression(Parser *parser, Token token) {
-    SourceLocation loc = {parser->lexer->filename, token.line, token.column};
-    consume(parser, TOKEN_IDENTIFIER, "Expect neural model name after 'infer'.");
-    Token model_tok = parser->previous;
-    char model_name[256];
-    size_t len = model_tok.length < 255 ? model_tok.length : 255;
-    memcpy(model_name, model_tok.start, len);
-    model_name[len] = '\0';
-
-    if (match_token(parser, TOKEN_WITH)) {
-        Expr *input_expr = parse_expression(parser);
-        return ast_create_infer(model_name, input_expr, loc);
-    }
-    return ast_create_infer(model_name, NULL, loc);
-}
-
 static Expr* parse_grouping(Parser *parser, Token token) {
     (void)token;
     Expr *expr = parse_expression(parser);
@@ -207,7 +185,7 @@ static Expr* parse_call_infix(Parser *parser, Expr *left, Token token) {
 
     consume(parser, TOKEN_RPAREN, "Expect ')' after arguments.");
     Expr *call_expr = ast_create_call(left->identifier_name, args, count, loc);
-    free_expr(left);
+    free_expr(left); // consume identifier expr
     return call_expr;
 }
 
@@ -234,8 +212,6 @@ static ParseRule rules[256] = {
     [TOKEN_BOOL_LITERAL]   = { parse_bool, NULL, PREC_NONE },
     [TOKEN_IDENTIFIER]     = { parse_variable, NULL, PREC_NONE },
     [TOKEN_SHOW]           = { parse_show_expression, NULL, PREC_NONE },
-    [TOKEN_AWAIT]          = { parse_await_expression, NULL, PREC_NONE },
-    [TOKEN_INFER]          = { parse_infer_expression, NULL, PREC_NONE },
     [TOKEN_LPAREN]         = { parse_grouping, parse_call_infix, PREC_CALL },
     [TOKEN_PLUS]           = { NULL, parse_binary, PREC_TERM },
     [TOKEN_MINUS]          = { parse_unary, parse_binary, PREC_TERM },
@@ -389,9 +365,9 @@ static Stmt* parse_if_statement(Parser *parser) {
     Stmt *then_branch = ast_create_block_stmt(then_stmts, count, loc);
 
     if (match_token(parser, TOKEN_ELSE)) {
-        match_token(parser, TOKEN_TERMINATOR);
+        match_token(parser, TOKEN_TERMINATOR); // handle optional ~ after else
         if (check(parser, TOKEN_IF)) {
-            advance_parser(parser);
+            advance_parser(parser); // consume if
             else_branch = parse_if_statement(parser);
         } else {
             else_branch = parse_block_statement(parser);
@@ -412,7 +388,7 @@ static Stmt* parse_while_statement(Parser *parser) {
     return ast_create_while_stmt(condition, body, loc);
 }
 
-static Stmt* parse_function_declaration(Parser *parser, bool is_async) {
+static Stmt* parse_function_declaration(Parser *parser) {
     SourceLocation loc = {parser->lexer->filename, parser->previous.line, parser->previous.column};
     consume(parser, TOKEN_IDENTIFIER, "Expect function name.");
     Token name_token = parser->previous;
@@ -460,7 +436,7 @@ static Stmt* parse_function_declaration(Parser *parser, bool is_async) {
 
     Stmt *body = parse_block_statement(parser);
 
-    Stmt *fn_stmt = ast_create_func_decl(fn_name, params, param_count, ret_ann, body, is_async, loc);
+    Stmt *fn_stmt = ast_create_func_decl(fn_name, params, param_count, ret_ann, body, loc);
     free(ret_ann.name);
     return fn_stmt;
 }
@@ -523,52 +499,6 @@ static Stmt* parse_reply_statement(Parser *parser) {
     return ast_create_reply_stmt(resp_expr, status_code, loc);
 }
 
-static Stmt* parse_spawn_statement(Parser *parser) {
-    SourceLocation loc = {parser->lexer->filename, parser->previous.line, parser->previous.column};
-    Expr *task_call = parse_expression(parser);
-    consume(parser, TOKEN_TERMINATOR, "Expect '~' statement terminator after spawn.");
-    return ast_create_spawn_stmt(task_call, loc);
-}
-
-static Stmt* parse_neural_declaration(Parser *parser) {
-    SourceLocation loc = {parser->lexer->filename, parser->previous.line, parser->previous.column};
-    consume(parser, TOKEN_IDENTIFIER, "Expect neural model name.");
-    Token name_tok = parser->previous;
-    char model_name[256];
-    size_t len = name_tok.length < 255 ? name_tok.length : 255;
-    memcpy(model_name, name_tok.start, len);
-    model_name[len] = '\0';
-
-    match_token(parser, TOKEN_TERMINATOR);
-    Stmt *layers_body = parse_block_statement(parser);
-    return ast_create_neural_decl(model_name, layers_body, loc);
-}
-
-static Stmt* parse_import_statement(Parser *parser) {
-    SourceLocation loc = {parser->lexer->filename, parser->previous.line, parser->previous.column};
-    consume(parser, TOKEN_TEXT_LITERAL, "Expect module import string e.g. \"std.math\".");
-    Token mod_tok = parser->previous;
-    char mod_name[256];
-    size_t len = mod_tok.length < 255 ? mod_tok.length : 255;
-    memcpy(mod_name, mod_tok.start, len);
-    mod_name[len] = '\0';
-
-    consume(parser, TOKEN_TERMINATOR, "Expect '~' statement terminator after import.");
-
-    Stmt **empty_stmts = (Stmt**)malloc(0);
-    return ast_create_block_stmt(empty_stmts, 0, loc);
-}
-
-static Stmt* parse_module_declaration(Parser *parser) {
-    while (!check(parser, TOKEN_TERMINATOR) && !check(parser, TOKEN_EOF)) {
-        advance_parser(parser);
-    }
-    match_token(parser, TOKEN_TERMINATOR);
-    SourceLocation loc = {parser->lexer->filename, parser->previous.line, parser->previous.column};
-    Stmt **empty_stmts = (Stmt**)malloc(0);
-    return ast_create_block_stmt(empty_stmts, 0, loc);
-}
-
 Stmt* parse_statement(Parser *parser) {
     if (match_token(parser, TOKEN_LET)) {
         return parse_var_declaration(parser, false);
@@ -585,18 +515,8 @@ Stmt* parse_statement(Parser *parser) {
     if (match_token(parser, TOKEN_WHILE) || match_token(parser, TOKEN_LOOP)) {
         return parse_while_statement(parser);
     }
-    if (match_token(parser, TOKEN_ASYNC)) {
-        consume(parser, TOKEN_FN, "Expect 'fn' after 'async'.");
-        return parse_function_declaration(parser, true);
-    }
     if (match_token(parser, TOKEN_FN)) {
-        return parse_function_declaration(parser, false);
-    }
-    if (match_token(parser, TOKEN_SPAWN)) {
-        return parse_spawn_statement(parser);
-    }
-    if (match_token(parser, TOKEN_NEURAL)) {
-        return parse_neural_declaration(parser);
+        return parse_function_declaration(parser);
     }
     if (match_token(parser, TOKEN_COMPONENT)) {
         return parse_component_declaration(parser);
@@ -609,12 +529,6 @@ Stmt* parse_statement(Parser *parser) {
     }
     if (match_token(parser, TOKEN_REPLY)) {
         return parse_reply_statement(parser);
-    }
-    if (match_token(parser, TOKEN_IMPORT)) {
-        return parse_import_statement(parser);
-    }
-    if (match_token(parser, TOKEN_MODULE)) {
-        return parse_module_declaration(parser);
     }
 
     // Default: Expression statement ending with ~

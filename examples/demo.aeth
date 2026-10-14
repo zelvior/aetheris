@@ -1,0 +1,22 @@
+fn calculatePort(offset: i32) -> i32 ~
+    let base: i32 = 8000 ~
+    return base + offset ~
+end
+
+route GET "/api/v1/health" ~
+    let msg: text = "Server Online" ~
+    reply msg with status 200 ~
+end
+
+component HeaderView ~
+    render ~
+        show Heading("Welcome to Aetheris Web") ~
+        show Button("Get Started") ~
+    end
+end
+
+fn main() -> i32 ~
+    let port: i32 = calculatePort(80) ~
+    print("Aetheris Server starting on port: ", port) ~
+    return 0 ~
+end

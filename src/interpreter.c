@@ -77,20 +77,6 @@ void interpreter_free(Interpreter *interp) {
     }
 }
 
-static Stmt* find_func_decl(Stmt *stmt, const char *name) {
-    if (!stmt) return NULL;
-    if (stmt->type == STMT_FUNCTION_DECL && strcmp(stmt->func_decl.name, name) == 0) {
-        return stmt;
-    }
-    if (stmt->type == STMT_BLOCK) {
-        for (size_t i = 0; i < stmt->block.stmt_count; i++) {
-            Stmt *res = find_func_decl(stmt->block.stmts[i], name);
-            if (res) return res;
-        }
-    }
-    return NULL;
-}
-
 Value eval_expression(Interpreter *interp, Expr *expr) {
     Value v;
     v.kind = VAL_UNIT;
@@ -130,20 +116,6 @@ Value eval_expression(Interpreter *interp, Expr *expr) {
             v.kind = VAL_UNIT;
             return v;
         }
-        case EXPR_AWAIT: {
-            // Evaluate async task / promise expression
-            printf("[Async Runtime] awaiting task evaluation...\n");
-            return eval_expression(interp, expr->await_expr.expr);
-        }
-        case EXPR_INFER: {
-            printf("[AI Tensor Engine] Running inference on model '%s'...\n", expr->infer_expr.model_name);
-            if (expr->infer_expr.input_expr) {
-                eval_expression(interp, expr->infer_expr.input_expr);
-            }
-            v.kind = VAL_FLOAT;
-            v.float_val = 0.985; // Simulated AI confidence score
-            return v;
-        }
         case EXPR_UNARY: {
             Value op = eval_expression(interp, expr->unary.operand);
             if (expr->unary.op == TOKEN_MINUS && op.kind == VAL_INT) {
@@ -178,16 +150,6 @@ Value eval_expression(Interpreter *interp, Expr *expr) {
                     default: break;
                 }
             }
-            if (left.kind == VAL_STRING && right.kind == VAL_STRING && expr->binary.op == TOKEN_PLUS) {
-                v.kind = VAL_STRING;
-                size_t l1 = strlen(left.str_val);
-                size_t l2 = strlen(right.str_val);
-                char *buf = (char*)malloc(l1 + l2 + 1);
-                strcpy(buf, left.str_val);
-                strcat(buf, right.str_val);
-                v.str_val = buf;
-                return v;
-            }
             return v;
         }
         case EXPR_CALL: {
@@ -205,31 +167,28 @@ Value eval_expression(Interpreter *interp, Expr *expr) {
             }
 
             if (interp->program) {
-                Stmt *s = NULL;
                 for (size_t i = 0; i < interp->program->stmt_count; i++) {
-                    s = find_func_decl(interp->program->stmts[i], expr->call.callee);
-                    if (s) break;
-                }
+                    Stmt *s = interp->program->stmts[i];
+                    if (s->type == STMT_FUNCTION_DECL && strcmp(s->func_decl.name, expr->call.callee) == 0) {
+                        Environment *call_env = env_create(interp->global_env);
+                        for (size_t p = 0; p < s->func_decl.param_count && p < expr->call.arg_count; p++) {
+                            Value arg_val = eval_expression(interp, expr->call.args[p]);
+                            env_assign(call_env, s->func_decl.params[p].name, arg_val);
+                        }
 
-                if (s) {
-                    Environment *call_env = env_create(interp->global_env);
-                    for (size_t p = 0; p < s->func_decl.param_count && p < expr->call.arg_count; p++) {
-                        Value arg_val = eval_expression(interp, expr->call.args[p]);
-                        env_assign(call_env, s->func_decl.params[p].name, arg_val);
+                        Environment *prev_env = interp->current_env;
+                        interp->current_env = call_env;
+                        bool prev_ret = interp->has_returned;
+                        interp->has_returned = false;
+
+                        eval_statement(interp, s->func_decl.body);
+
+                        Value ret = interp->return_value;
+                        interp->current_env = prev_env;
+                        interp->has_returned = prev_ret;
+                        env_free(call_env);
+                        return ret;
                     }
-
-                    Environment *prev_env = interp->current_env;
-                    interp->current_env = call_env;
-                    bool prev_ret = interp->has_returned;
-                    interp->has_returned = false;
-
-                    eval_statement(interp, s->func_decl.body);
-
-                    Value ret = interp->return_value;
-                    interp->current_env = prev_env;
-                    interp->has_returned = prev_ret;
-                    env_free(call_env);
-                    return ret;
                 }
             }
             return v;
@@ -243,20 +202,20 @@ Value eval_expression(Interpreter *interp, Expr *expr) {
     return v;
 }
 
-static void eval_stmt_helper(Interpreter *interp, Stmt *stmt) {
-    if (!stmt || interp->has_returned) return;
+bool eval_statement(Interpreter *interp, Stmt *stmt) {
+    if (!stmt || interp->has_returned) return true;
 
     switch (stmt->type) {
         case STMT_EXPR:
             eval_expression(interp, stmt->expr);
-            break;
+            return true;
         case STMT_VAR_DECL: {
             Value val = {VAL_UNIT, {0}};
             if (stmt->var_decl.initializer) {
                 val = eval_expression(interp, stmt->var_decl.initializer);
             }
             env_assign(interp->current_env, stmt->var_decl.name, val);
-            break;
+            return true;
         }
         case STMT_RETURN:
             if (stmt->return_stmt.value) {
@@ -265,7 +224,7 @@ static void eval_stmt_helper(Interpreter *interp, Stmt *stmt) {
                 interp->return_value.kind = VAL_UNIT;
             }
             interp->has_returned = true;
-            break;
+            return true;
         case STMT_REPLY: {
             Value resp = eval_expression(interp, stmt->reply_stmt.response_expr);
             printf("[HTTP Reply %d] ", stmt->reply_stmt.status_code);
@@ -275,82 +234,56 @@ static void eval_stmt_helper(Interpreter *interp, Stmt *stmt) {
 
             interp->return_value = resp;
             interp->has_returned = true;
-            break;
-        }
-        case STMT_SPAWN: {
-            printf("[Concurrency Manager] Spawning asynchronous task thread...\n");
-            eval_expression(interp, stmt->spawn_stmt.task_call);
-            break;
+            return true;
         }
         case STMT_IF: {
             Value cond = eval_expression(interp, stmt->if_stmt.condition);
             bool cond_true = (cond.kind == VAL_BOOL && cond.bool_val) || (cond.kind == VAL_INT && cond.int_val != 0);
             if (cond_true) {
-                eval_stmt_helper(interp, stmt->if_stmt.then_branch);
+                eval_statement(interp, stmt->if_stmt.then_branch);
             } else if (stmt->if_stmt.else_branch) {
-                eval_stmt_helper(interp, stmt->if_stmt.else_branch);
+                eval_statement(interp, stmt->if_stmt.else_branch);
             }
-            break;
+            return true;
         }
         case STMT_WHILE: {
             while (!interp->has_returned) {
                 Value cond = eval_expression(interp, stmt->while_stmt.condition);
                 bool cond_true = (cond.kind == VAL_BOOL && cond.bool_val) || (cond.kind == VAL_INT && cond.int_val != 0);
                 if (!cond_true) break;
-                eval_stmt_helper(interp, stmt->while_stmt.body);
+                eval_statement(interp, stmt->while_stmt.body);
             }
-            break;
+            return true;
         }
         case STMT_BLOCK: {
-            bool is_mod_block = false;
+            Environment *block_env = env_create(interp->current_env);
+            interp->current_env = block_env;
             for (size_t i = 0; i < stmt->block.stmt_count; i++) {
-                if (stmt->block.stmts[i]->type == STMT_FUNCTION_DECL) {
-                    is_mod_block = true;
-                    break;
-                }
+                if (interp->has_returned) break;
+                eval_statement(interp, stmt->block.stmts[i]);
             }
-
-            if (is_mod_block) {
-                for (size_t i = 0; i < stmt->block.stmt_count; i++) {
-                    if (interp->has_returned) break;
-                    eval_stmt_helper(interp, stmt->block.stmts[i]);
-                }
-            } else {
-                Environment *block_env = env_create(interp->current_env);
-                interp->current_env = block_env;
-                for (size_t i = 0; i < stmt->block.stmt_count; i++) {
-                    if (interp->has_returned) break;
-                    eval_stmt_helper(interp, stmt->block.stmts[i]);
-                }
-                interp->current_env = block_env->parent;
-                env_free(block_env);
-            }
-            break;
+            interp->current_env = block_env->parent;
+            env_free(block_env);
+            return true;
         }
         case STMT_FUNCTION_DECL:
-            break;
+            return true;
         case STMT_COMPONENT_DECL:
             printf("[Registering Frontend Component: %s]\n", stmt->component_decl.name);
-            eval_stmt_helper(interp, stmt->component_decl.render_body);
-            break;
+            eval_statement(interp, stmt->component_decl.render_body);
+            return true;
         case STMT_ROUTE_DECL:
             printf("[Registering Server Route: %s %s]\n", stmt->route_decl.method, stmt->route_decl.path);
-            eval_stmt_helper(interp, stmt->route_decl.handler_body);
-            break;
-        case STMT_NEURAL_DECL:
-            printf("[Registering AI Neural Model: %s]\n", stmt->neural_decl.name);
-            eval_stmt_helper(interp, stmt->neural_decl.layers_body);
-            break;
+            eval_statement(interp, stmt->route_decl.handler_body);
+            return true;
     }
-}
 
-bool eval_statement(Interpreter *interp, Stmt *stmt) {
-    eval_stmt_helper(interp, stmt);
     return true;
 }
 
 Value eval_program(Interpreter *interp, Program *program) {
     interp->program = program;
+    Value result = {VAL_UNIT, {0}};
 
     for (size_t i = 0; i < program->stmt_count; i++) {
         eval_statement(interp, program->stmts[i]);
@@ -358,8 +291,7 @@ Value eval_program(Interpreter *interp, Program *program) {
 
     // Auto invoke main() if declared
     for (size_t i = 0; i < program->stmt_count; i++) {
-        Stmt *s = find_func_decl(program->stmts[i], "main");
-        if (s) {
+        if (program->stmts[i]->type == STMT_FUNCTION_DECL && strcmp(program->stmts[i]->func_decl.name, "main") == 0) {
             Expr main_call;
             main_call.type = EXPR_CALL;
             main_call.call.callee = "main";
@@ -369,6 +301,5 @@ Value eval_program(Interpreter *interp, Program *program) {
         }
     }
 
-    Value unit_val = {VAL_UNIT, {0}};
-    return unit_val;
+    return result;
 }

@@ -34,12 +34,6 @@ static void codegen_expr(Codegen *cg, Expr *expr) {
         case EXPR_SHOW:
             fprintf(cg->out, "aeth_ui_render_widget(\"%s\")", expr->show.widget_name);
             break;
-        case EXPR_AWAIT:
-            codegen_expr(cg, expr->await_expr.expr);
-            break;
-        case EXPR_INFER:
-            fprintf(cg->out, "aeth_ai_infer(\"%s\")", expr->infer_expr.model_name);
-            break;
         case EXPR_UNARY:
             if (expr->unary.op == TOKEN_MINUS) fprintf(cg->out, "-");
             else if (expr->unary.op == TOKEN_LOGICAL_NOT) fprintf(cg->out, "!");
@@ -143,11 +137,6 @@ static void codegen_stmt(Codegen *cg, Stmt *stmt) {
         case STMT_REPLY:
             fprintf(cg->out, "aeth_http_reply(%d, ", stmt->reply_stmt.status_code);
             codegen_expr(cg, stmt->reply_stmt.response_expr);
-            fprintf(cg->out, ");\n");
-            break;
-        case STMT_SPAWN:
-            fprintf(cg->out, "aeth_task_spawn(");
-            codegen_expr(cg, stmt->spawn_stmt.task_call);
             fprintf(cg->out, ");\n");
             break;
         case STMT_IF:
@@ -256,21 +245,6 @@ static void codegen_stmt(Codegen *cg, Stmt *stmt) {
                 }
             } else {
                 codegen_stmt(cg, stmt->route_decl.handler_body);
-            }
-            cg->indent_level--;
-            write_indent(cg);
-            fprintf(cg->out, "}\n\n");
-            break;
-        }
-        case STMT_NEURAL_DECL: {
-            fprintf(cg->out, "void aeth_neural_%s() {\n", stmt->neural_decl.name);
-            cg->indent_level++;
-            if (stmt->neural_decl.layers_body->type == STMT_BLOCK) {
-                for (size_t i = 0; i < stmt->neural_decl.layers_body->block.stmt_count; i++) {
-                    codegen_stmt(cg, stmt->neural_decl.layers_body->block.stmts[i]);
-                }
-            } else {
-                codegen_stmt(cg, stmt->neural_decl.layers_body);
             }
             cg->indent_level--;
             write_indent(cg);

@@ -81,17 +81,6 @@ static char* ir_gen_expr(IrProgram *prog, Expr *expr) {
             append_inst(prog, inst);
             return t;
         }
-        case EXPR_AWAIT: {
-            return ir_gen_expr(prog, expr->await_expr.expr);
-        }
-        case EXPR_INFER: {
-            char *t = new_temp(prog);
-            IrInstruction *inst = create_inst(IR_CALL);
-            inst->dest = t;
-            inst->src1 = strdup(expr->infer_expr.model_name);
-            append_inst(prog, inst);
-            return t;
-        }
         case EXPR_UNARY: {
             char *operand = ir_gen_expr(prog, expr->unary.operand);
             char *t = new_temp(prog);
@@ -173,12 +162,6 @@ static void ir_gen_stmt(IrProgram *prog, Stmt *stmt) {
             IrInstruction *ret = create_inst(IR_RETURN);
             ret->src1 = resp_val ? strdup(resp_val) : NULL;
             append_inst(prog, ret);
-            break;
-        }
-        case STMT_SPAWN: {
-            if (stmt->spawn_stmt.task_call) {
-                ir_gen_expr(prog, stmt->spawn_stmt.task_call);
-            }
             break;
         }
         case STMT_IF: {
@@ -303,20 +286,6 @@ static void ir_gen_stmt(IrProgram *prog, Stmt *stmt) {
                 }
             } else {
                 ir_gen_stmt(prog, stmt->route_decl.handler_body);
-            }
-            break;
-        }
-        case STMT_NEURAL_DECL: {
-            IrInstruction *lbl = create_inst(IR_LABEL);
-            lbl->dest = strdup(stmt->neural_decl.name);
-            append_inst(prog, lbl);
-
-            if (stmt->neural_decl.layers_body->type == STMT_BLOCK) {
-                for (size_t i = 0; i < stmt->neural_decl.layers_body->block.stmt_count; i++) {
-                    ir_gen_stmt(prog, stmt->neural_decl.layers_body->block.stmts[i]);
-                }
-            } else {
-                ir_gen_stmt(prog, stmt->neural_decl.layers_body);
             }
             break;
         }
