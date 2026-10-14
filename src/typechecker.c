@@ -158,6 +158,16 @@ Type typecheck_expression(TypeChecker *tc, Expr *expr) {
             t.kind = TYPE_UNIT;
             return t;
         }
+        case EXPR_AWAIT: {
+            return typecheck_expression(tc, expr->await_expr.expr);
+        }
+        case EXPR_INFER: {
+            if (expr->infer_expr.input_expr) {
+                typecheck_expression(tc, expr->infer_expr.input_expr);
+            }
+            t.kind = TYPE_F32;
+            return t;
+        }
         case EXPR_UNARY: {
             Type operand_type = typecheck_expression(tc, expr->unary.operand);
             return operand_type;
@@ -250,6 +260,12 @@ bool typecheck_statement(TypeChecker *tc, Stmt *stmt) {
             }
             return !tc->had_error;
 
+        case STMT_SPAWN:
+            if (stmt->spawn_stmt.task_call) {
+                typecheck_expression(tc, stmt->spawn_stmt.task_call);
+            }
+            return !tc->had_error;
+
         case STMT_IF:
             typecheck_expression(tc, stmt->if_stmt.condition);
             typecheck_statement(tc, stmt->if_stmt.then_branch);
@@ -306,6 +322,17 @@ bool typecheck_statement(TypeChecker *tc, Stmt *stmt) {
         case STMT_ROUTE_DECL: {
             tc->current_scope = symbol_table_create(tc->current_scope);
             typecheck_statement(tc, stmt->route_decl.handler_body);
+            SymbolTable *old = tc->current_scope;
+            tc->current_scope = old->parent;
+            symbol_table_free(old);
+            return !tc->had_error;
+        }
+
+        case STMT_NEURAL_DECL: {
+            Type model_t = {TYPE_UNIT, NULL};
+            symbol_table_insert(tc->current_scope, stmt->neural_decl.name, model_t, false, true);
+            tc->current_scope = symbol_table_create(tc->current_scope);
+            typecheck_statement(tc, stmt->neural_decl.layers_body);
             SymbolTable *old = tc->current_scope;
             tc->current_scope = old->parent;
             symbol_table_free(old);

@@ -89,6 +89,23 @@ Expr* ast_create_show(const char *widget_name, Expr **props, size_t prop_count, 
     return e;
 }
 
+Expr* ast_create_await(Expr *expr, SourceLocation loc) {
+    Expr *e = (Expr*)malloc(sizeof(Expr));
+    e->type = EXPR_AWAIT;
+    e->location = loc;
+    e->await_expr.expr = expr;
+    return e;
+}
+
+Expr* ast_create_infer(const char *model_name, Expr *input_expr, SourceLocation loc) {
+    Expr *e = (Expr*)malloc(sizeof(Expr));
+    e->type = EXPR_INFER;
+    e->location = loc;
+    e->infer_expr.model_name = strdup(model_name ? model_name : "");
+    e->infer_expr.input_expr = input_expr;
+    return e;
+}
+
 Stmt* ast_create_expr_stmt(Expr *expr, SourceLocation loc) {
     Stmt *s = (Stmt*)malloc(sizeof(Stmt));
     s->type = STMT_EXPR;
@@ -146,7 +163,7 @@ Stmt* ast_create_block_stmt(Stmt **stmts, size_t count, SourceLocation loc) {
     return s;
 }
 
-Stmt* ast_create_func_decl(const char *name, Param *params, size_t param_count, TypeAnnotation ret_type, Stmt *body, SourceLocation loc) {
+Stmt* ast_create_func_decl(const char *name, Param *params, size_t param_count, TypeAnnotation ret_type, Stmt *body, bool is_async, SourceLocation loc) {
     Stmt *s = (Stmt*)malloc(sizeof(Stmt));
     s->type = STMT_FUNCTION_DECL;
     s->location = loc;
@@ -156,6 +173,7 @@ Stmt* ast_create_func_decl(const char *name, Param *params, size_t param_count, 
     s->func_decl.return_type.name = ret_type.name ? strdup(ret_type.name) : strdup("unit");
     s->func_decl.return_type.is_pointer = ret_type.is_pointer;
     s->func_decl.body = body;
+    s->func_decl.is_async = is_async;
     return s;
 }
 
@@ -186,6 +204,23 @@ Stmt* ast_create_reply_stmt(Expr *response_expr, int status_code, SourceLocation
     s->location = loc;
     s->reply_stmt.response_expr = response_expr;
     s->reply_stmt.status_code = status_code;
+    return s;
+}
+
+Stmt* ast_create_spawn_stmt(Expr *task_call, SourceLocation loc) {
+    Stmt *s = (Stmt*)malloc(sizeof(Stmt));
+    s->type = STMT_SPAWN;
+    s->location = loc;
+    s->spawn_stmt.task_call = task_call;
+    return s;
+}
+
+Stmt* ast_create_neural_decl(const char *name, Stmt *layers_body, SourceLocation loc) {
+    Stmt *s = (Stmt*)malloc(sizeof(Stmt));
+    s->type = STMT_NEURAL_DECL;
+    s->location = loc;
+    s->neural_decl.name = strdup(name ? name : "");
+    s->neural_decl.layers_body = layers_body;
     return s;
 }
 
@@ -229,6 +264,13 @@ void free_expr(Expr *expr) {
                 free_expr(expr->show.props[i]);
             }
             free(expr->show.props);
+            break;
+        case EXPR_AWAIT:
+            free_expr(expr->await_expr.expr);
+            break;
+        case EXPR_INFER:
+            free(expr->infer_expr.model_name);
+            free_expr(expr->infer_expr.input_expr);
             break;
         default:
             break;
@@ -291,6 +333,13 @@ void free_stmt(Stmt *stmt) {
             break;
         case STMT_REPLY:
             free_expr(stmt->reply_stmt.response_expr);
+            break;
+        case STMT_SPAWN:
+            free_expr(stmt->spawn_stmt.task_call);
+            break;
+        case STMT_NEURAL_DECL:
+            free(stmt->neural_decl.name);
+            free_stmt(stmt->neural_decl.layers_body);
             break;
     }
     free(stmt);

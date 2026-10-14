@@ -1,4 +1,5 @@
 #define _POSIX_C_SOURCE 200809L
+#include "common.h"
 #include "lexer.h"
 
 void lexer_init(Lexer *lexer, const char *source, const char *filename) {
@@ -157,6 +158,7 @@ static TokenType check_keyword(const char *start, size_t length) {
             if (memcmp(start, "break", 5) == 0) return TOKEN_BREAK;
             if (memcmp(start, "async", 5) == 0) return TOKEN_ASYNC;
             if (memcmp(start, "await", 5) == 0) return TOKEN_AWAIT;
+            if (memcmp(start, "spawn", 5) == 0) return TOKEN_SPAWN;
             if (memcmp(start, "style", 5) == 0) return TOKEN_STYLE;
             if (memcmp(start, "route", 5) == 0) return TOKEN_ROUTE;
             if (memcmp(start, "reply", 5) == 0) return TOKEN_REPLY;
@@ -208,12 +210,13 @@ static Token number(Lexer *lexer, const char *start, size_t line, size_t col) {
 
     if (start[0] == '0' && (peek(lexer) == 'x' || peek(lexer) == 'X')) {
         advance(lexer); // 'x'
+        const char *hex_start = lexer->source + lexer->cursor;
         while (isxdigit(peek(lexer))) {
             advance(lexer);
         }
         size_t length = (size_t)(lexer->source + lexer->cursor - start);
         Token token = make_token(lexer, TOKEN_INT_LITERAL, start, length, line, col);
-        token.value.int_val = strtoll(start, NULL, 16);
+        token.value.int_val = (int64_t)strtoull(hex_start, NULL, 16);
         return token;
     }
 
@@ -368,17 +371,11 @@ const char* token_type_to_string(TokenType type) {
         case TOKEN_FN: return "TOKEN_FN";
         case TOKEN_RETURN: return "TOKEN_RETURN";
         case TOKEN_END: return "TOKEN_END";
-        case TOKEN_IF: return "TOKEN_IF";
-        case TOKEN_ELSE: return "TOKEN_ELSE";
-        case TOKEN_COMPONENT: return "TOKEN_COMPONENT";
-        case TOKEN_RENDER: return "TOKEN_RENDER";
-        case TOKEN_SHOW: return "TOKEN_SHOW";
-        case TOKEN_WITH: return "TOKEN_WITH";
-        case TOKEN_ROUTE: return "TOKEN_ROUTE";
-        case TOKEN_REPLY: return "TOKEN_REPLY";
-        case TOKEN_STATUS: return "TOKEN_STATUS";
-        case TOKEN_HTTP_GET: return "TOKEN_HTTP_GET";
-        case TOKEN_HTTP_POST: return "TOKEN_HTTP_POST";
+        case TOKEN_ASYNC: return "TOKEN_ASYNC";
+        case TOKEN_AWAIT: return "TOKEN_AWAIT";
+        case TOKEN_SPAWN: return "TOKEN_SPAWN";
+        case TOKEN_NEURAL: return "TOKEN_NEURAL";
+        case TOKEN_INFER: return "TOKEN_INFER";
         case TOKEN_TERMINATOR: return "TOKEN_TERMINATOR";
         default: return "TOKEN_UNKNOWN";
     }
