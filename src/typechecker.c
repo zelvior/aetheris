@@ -130,7 +130,7 @@ Type typecheck_expression(TypeChecker *tc, Expr *expr) {
 
     switch (expr->type) {
         case EXPR_INT_LITERAL:
-            t.kind = TYPE_I32; // Default integer literal
+            t.kind = TYPE_I32;
             return t;
         case EXPR_FLOAT_LITERAL:
             t.kind = TYPE_F64;
@@ -151,6 +151,13 @@ Type typecheck_expression(TypeChecker *tc, Expr *expr) {
             }
             return s->type;
         }
+        case EXPR_SHOW: {
+            for (size_t i = 0; i < expr->show.prop_count; i++) {
+                typecheck_expression(tc, expr->show.props[i]);
+            }
+            t.kind = TYPE_UNIT;
+            return t;
+        }
         case EXPR_UNARY: {
             Type operand_type = typecheck_expression(tc, expr->unary.operand);
             return operand_type;
@@ -166,7 +173,6 @@ Type typecheck_expression(TypeChecker *tc, Expr *expr) {
                 return t;
             }
 
-            // Strict no silent widening: left and right types must match exactly
             if (!types_equal(left_t, right_t)) {
                 fprintf(stderr, "[TypeError] Type mismatch in binary expression at line %zu: '%s' vs '%s'. Explicit widening required.\n",
                         expr->location.line, type_to_string(left_t), type_to_string(right_t));
@@ -180,7 +186,7 @@ Type typecheck_expression(TypeChecker *tc, Expr *expr) {
             if (s) {
                 return s->type;
             }
-            t.kind = TYPE_I32; // Default assume function return
+            t.kind = TYPE_I32;
             return t;
         }
         case EXPR_ASSIGNMENT: {
@@ -238,6 +244,12 @@ bool typecheck_statement(TypeChecker *tc, Stmt *stmt) {
             }
             return !tc->had_error;
 
+        case STMT_REPLY:
+            if (stmt->reply_stmt.response_expr) {
+                typecheck_expression(tc, stmt->reply_stmt.response_expr);
+            }
+            return !tc->had_error;
+
         case STMT_IF:
             typecheck_expression(tc, stmt->if_stmt.condition);
             typecheck_statement(tc, stmt->if_stmt.then_branch);
@@ -274,6 +286,26 @@ bool typecheck_statement(TypeChecker *tc, Stmt *stmt) {
 
             typecheck_statement(tc, stmt->func_decl.body);
 
+            SymbolTable *old = tc->current_scope;
+            tc->current_scope = old->parent;
+            symbol_table_free(old);
+            return !tc->had_error;
+        }
+
+        case STMT_COMPONENT_DECL: {
+            Type comp_t = {TYPE_UNIT, NULL};
+            symbol_table_insert(tc->current_scope, stmt->component_decl.name, comp_t, false, true);
+            tc->current_scope = symbol_table_create(tc->current_scope);
+            typecheck_statement(tc, stmt->component_decl.render_body);
+            SymbolTable *old = tc->current_scope;
+            tc->current_scope = old->parent;
+            symbol_table_free(old);
+            return !tc->had_error;
+        }
+
+        case STMT_ROUTE_DECL: {
+            tc->current_scope = symbol_table_create(tc->current_scope);
+            typecheck_statement(tc, stmt->route_decl.handler_body);
             SymbolTable *old = tc->current_scope;
             tc->current_scope = old->parent;
             symbol_table_free(old);

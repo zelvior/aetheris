@@ -121,6 +121,8 @@ static TokenType check_keyword(const char *start, size_t length) {
             if (memcmp(start, "and", 3) == 0) return TOKEN_LOGICAL_AND;
             if (memcmp(start, "not", 3) == 0) return TOKEN_LOGICAL_NOT;
             if (memcmp(start, "fit", 3) == 0) return TOKEN_FIT;
+            if (memcmp(start, "GET", 3) == 0) return TOKEN_HTTP_GET;
+            if (memcmp(start, "PUT", 3) == 0) return TOKEN_HTTP_PUT;
             if (memcmp(start, "i16", 3) == 0) return TOKEN_TYPE_I16;
             if (memcmp(start, "i32", 3) == 0) return TOKEN_TYPE_I32;
             if (memcmp(start, "i64", 3) == 0) return TOKEN_TYPE_I64;
@@ -136,9 +138,12 @@ static TokenType check_keyword(const char *start, size_t length) {
             if (memcmp(start, "loop", 4) == 0) return TOKEN_LOOP;
             if (memcmp(start, "type", 4) == 0) return TOKEN_TYPE;
             if (memcmp(start, "enum", 4) == 0) return TOKEN_ENUM;
+            if (memcmp(start, "show", 4) == 0) return TOKEN_SHOW;
+            if (memcmp(start, "with", 4) == 0) return TOKEN_WITH;
             if (memcmp(start, "bind", 4) == 0) return TOKEN_BIND;
             if (memcmp(start, "emit", 4) == 0) return TOKEN_EMIT;
             if (memcmp(start, "from", 4) == 0) return TOKEN_FROM;
+            if (memcmp(start, "POST", 4) == 0) return TOKEN_HTTP_POST;
             if (memcmp(start, "iptr", 4) == 0) return TOKEN_TYPE_IPTR;
             if (memcmp(start, "uptr", 4) == 0) return TOKEN_TYPE_UPTR;
             if (memcmp(start, "bool", 4) == 0) return TOKEN_TYPE_BOOL;
@@ -168,6 +173,7 @@ static TokenType check_keyword(const char *start, size_t length) {
             if (memcmp(start, "export", 6) == 0) return TOKEN_EXPORT;
             if (memcmp(start, "import", 6) == 0) return TOKEN_IMPORT;
             if (memcmp(start, "module", 6) == 0) return TOKEN_MODULE;
+            if (memcmp(start, "DELETE", 6) == 0) return TOKEN_HTTP_DELETE;
             break;
         case 7:
             if (memcmp(start, "default", 7) == 0) return TOKEN_DEFAULT;
@@ -282,13 +288,8 @@ Token lexer_next_token(Lexer *lexer) {
 
     switch (c) {
         case '~': {
-            // Disambiguate statement terminator vs bitwise NOT:
-            // ~ is TERMINATOR unless it precedes an operand or expression token.
-            // If the next non-whitespace char is an identifier, number, string, paren, or ~ it's BITWISE_NOT.
-            // Otherwise (e.g. newline, end, else, or next statement keyword), it's TERMINATOR.
             char next_c = peek(lexer);
             if (isalpha(next_c) || isdigit(next_c) || next_c == '_' || next_c == '(' || next_c == '~') {
-                // If it looks like unary bitwise not e.g. ~mask
                 return make_token(lexer, TOKEN_BITWISE_NOT, start, 1, line, col);
             }
             return make_token(lexer, TOKEN_TERMINATOR, start, 1, line, col);
@@ -369,41 +370,15 @@ const char* token_type_to_string(TokenType type) {
         case TOKEN_END: return "TOKEN_END";
         case TOKEN_IF: return "TOKEN_IF";
         case TOKEN_ELSE: return "TOKEN_ELSE";
-        case TOKEN_MATCH: return "TOKEN_MATCH";
-        case TOKEN_CASE: return "TOKEN_CASE";
-        case TOKEN_DEFAULT: return "TOKEN_DEFAULT";
-        case TOKEN_LOOP: return "TOKEN_LOOP";
-        case TOKEN_WHILE: return "TOKEN_WHILE";
-        case TOKEN_FOR: return "TOKEN_FOR";
-        case TOKEN_IN: return "TOKEN_IN";
-        case TOKEN_BREAK: return "TOKEN_BREAK";
-        case TOKEN_CONTINUE: return "TOKEN_CONTINUE";
-        case TOKEN_IDENTIFIER: return "TOKEN_IDENTIFIER";
-        case TOKEN_INT_LITERAL: return "TOKEN_INT_LITERAL";
-        case TOKEN_FLOAT_LITERAL: return "TOKEN_FLOAT_LITERAL";
-        case TOKEN_TEXT_LITERAL: return "TOKEN_TEXT_LITERAL";
-        case TOKEN_BOOL_LITERAL: return "TOKEN_BOOL_LITERAL";
-        case TOKEN_TYPE_I8: return "TOKEN_TYPE_I8";
-        case TOKEN_TYPE_I16: return "TOKEN_TYPE_I16";
-        case TOKEN_TYPE_I32: return "TOKEN_TYPE_I32";
-        case TOKEN_TYPE_I64: return "TOKEN_TYPE_I64";
-        case TOKEN_TYPE_U8: return "TOKEN_TYPE_U8";
-        case TOKEN_TYPE_U16: return "TOKEN_TYPE_U16";
-        case TOKEN_TYPE_U32: return "TOKEN_TYPE_U32";
-        case TOKEN_TYPE_U64: return "TOKEN_TYPE_U64";
-        case TOKEN_TYPE_IPTR: return "TOKEN_TYPE_IPTR";
-        case TOKEN_TYPE_UPTR: return "TOKEN_TYPE_UPTR";
-        case TOKEN_TYPE_F32: return "TOKEN_TYPE_F32";
-        case TOKEN_TYPE_F64: return "TOKEN_TYPE_F64";
-        case TOKEN_TYPE_BOOL: return "TOKEN_TYPE_BOOL";
-        case TOKEN_TYPE_TEXT: return "TOKEN_TYPE_TEXT";
-        case TOKEN_PLUS: return "TOKEN_PLUS";
-        case TOKEN_MINUS: return "TOKEN_MINUS";
-        case TOKEN_STAR: return "TOKEN_STAR";
-        case TOKEN_SLASH: return "TOKEN_SLASH";
-        case TOKEN_ASSIGN: return "TOKEN_ASSIGN";
-        case TOKEN_EQ: return "TOKEN_EQ";
-        case TOKEN_NEQ: return "TOKEN_NEQ";
+        case TOKEN_COMPONENT: return "TOKEN_COMPONENT";
+        case TOKEN_RENDER: return "TOKEN_RENDER";
+        case TOKEN_SHOW: return "TOKEN_SHOW";
+        case TOKEN_WITH: return "TOKEN_WITH";
+        case TOKEN_ROUTE: return "TOKEN_ROUTE";
+        case TOKEN_REPLY: return "TOKEN_REPLY";
+        case TOKEN_STATUS: return "TOKEN_STATUS";
+        case TOKEN_HTTP_GET: return "TOKEN_HTTP_GET";
+        case TOKEN_HTTP_POST: return "TOKEN_HTTP_POST";
         case TOKEN_TERMINATOR: return "TOKEN_TERMINATOR";
         default: return "TOKEN_UNKNOWN";
     }

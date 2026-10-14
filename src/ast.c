@@ -79,6 +79,16 @@ Expr* ast_create_assignment(const char *target, Expr *value, SourceLocation loc)
     return e;
 }
 
+Expr* ast_create_show(const char *widget_name, Expr **props, size_t prop_count, SourceLocation loc) {
+    Expr *e = (Expr*)malloc(sizeof(Expr));
+    e->type = EXPR_SHOW;
+    e->location = loc;
+    e->show.widget_name = strdup(widget_name ? widget_name : "");
+    e->show.props = props;
+    e->show.prop_count = prop_count;
+    return e;
+}
+
 Stmt* ast_create_expr_stmt(Expr *expr, SourceLocation loc) {
     Stmt *s = (Stmt*)malloc(sizeof(Stmt));
     s->type = STMT_EXPR;
@@ -149,6 +159,36 @@ Stmt* ast_create_func_decl(const char *name, Param *params, size_t param_count, 
     return s;
 }
 
+Stmt* ast_create_component_decl(const char *name, Param *props, size_t prop_count, Stmt *render_body, SourceLocation loc) {
+    Stmt *s = (Stmt*)malloc(sizeof(Stmt));
+    s->type = STMT_COMPONENT_DECL;
+    s->location = loc;
+    s->component_decl.name = strdup(name ? name : "");
+    s->component_decl.props = props;
+    s->component_decl.prop_count = prop_count;
+    s->component_decl.render_body = render_body;
+    return s;
+}
+
+Stmt* ast_create_route_decl(const char *method, const char *path, Stmt *handler_body, SourceLocation loc) {
+    Stmt *s = (Stmt*)malloc(sizeof(Stmt));
+    s->type = STMT_ROUTE_DECL;
+    s->location = loc;
+    s->route_decl.method = strdup(method ? method : "GET");
+    s->route_decl.path = strdup(path ? path : "/");
+    s->route_decl.handler_body = handler_body;
+    return s;
+}
+
+Stmt* ast_create_reply_stmt(Expr *response_expr, int status_code, SourceLocation loc) {
+    Stmt *s = (Stmt*)malloc(sizeof(Stmt));
+    s->type = STMT_REPLY;
+    s->location = loc;
+    s->reply_stmt.response_expr = response_expr;
+    s->reply_stmt.status_code = status_code;
+    return s;
+}
+
 Program* ast_create_program(Stmt **stmts, size_t count) {
     Program *p = (Program*)malloc(sizeof(Program));
     p->stmts = stmts;
@@ -182,6 +222,13 @@ void free_expr(Expr *expr) {
         case EXPR_ASSIGNMENT:
             free(expr->assignment.target_name);
             free_expr(expr->assignment.value);
+            break;
+        case EXPR_SHOW:
+            free(expr->show.widget_name);
+            for (size_t i = 0; i < expr->show.prop_count; i++) {
+                free_expr(expr->show.props[i]);
+            }
+            free(expr->show.props);
             break;
         default:
             break;
@@ -227,6 +274,23 @@ void free_stmt(Stmt *stmt) {
             free(stmt->func_decl.params);
             free(stmt->func_decl.return_type.name);
             free_stmt(stmt->func_decl.body);
+            break;
+        case STMT_COMPONENT_DECL:
+            free(stmt->component_decl.name);
+            for (size_t i = 0; i < stmt->component_decl.prop_count; i++) {
+                free(stmt->component_decl.props[i].name);
+                free(stmt->component_decl.props[i].type_annotation.name);
+            }
+            free(stmt->component_decl.props);
+            free_stmt(stmt->component_decl.render_body);
+            break;
+        case STMT_ROUTE_DECL:
+            free(stmt->route_decl.method);
+            free(stmt->route_decl.path);
+            free_stmt(stmt->route_decl.handler_body);
+            break;
+        case STMT_REPLY:
+            free_expr(stmt->reply_stmt.response_expr);
             break;
     }
     free(stmt);

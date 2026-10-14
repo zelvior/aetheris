@@ -33,6 +33,8 @@ typedef enum {
     TOKEN_ENUM,
     TOKEN_COMPONENT,
     TOKEN_RENDER,
+    TOKEN_SHOW,
+    TOKEN_WITH,
     TOKEN_BIND,
     TOKEN_ON,
     TOKEN_EMIT,
@@ -51,6 +53,12 @@ typedef enum {
     TOKEN_IMPORT,
     TOKEN_EXPORT,
     TOKEN_FROM,
+
+    // HTTP Methods
+    TOKEN_HTTP_GET,
+    TOKEN_HTTP_POST,
+    TOKEN_HTTP_PUT,
+    TOKEN_HTTP_DELETE,
 
     // Identifiers & Literals
     TOKEN_IDENTIFIER,

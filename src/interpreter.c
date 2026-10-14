@@ -105,6 +105,17 @@ Value eval_expression(Interpreter *interp, Expr *expr) {
             fprintf(stderr, "[RuntimeError] Undefined variable '%s'\n", expr->identifier_name);
             return v;
         }
+        case EXPR_SHOW: {
+            printf("[UI Component Render] <%s>", expr->show.widget_name);
+            for (size_t i = 0; i < expr->show.prop_count; i++) {
+                Value prop_val = eval_expression(interp, expr->show.props[i]);
+                if (prop_val.kind == VAL_STRING) printf(" prop=\"%s\"", prop_val.str_val);
+                else if (prop_val.kind == VAL_INT) printf(" prop=%ld", prop_val.int_val);
+            }
+            printf(" </%s>\n", expr->show.widget_name);
+            v.kind = VAL_UNIT;
+            return v;
+        }
         case EXPR_UNARY: {
             Value op = eval_expression(interp, expr->unary.operand);
             if (expr->unary.op == TOKEN_MINUS && op.kind == VAL_INT) {
@@ -155,7 +166,6 @@ Value eval_expression(Interpreter *interp, Expr *expr) {
                 return v;
             }
 
-            // Function call in program AST
             if (interp->program) {
                 for (size_t i = 0; i < interp->program->stmt_count; i++) {
                     Stmt *s = interp->program->stmts[i];
@@ -215,6 +225,17 @@ bool eval_statement(Interpreter *interp, Stmt *stmt) {
             }
             interp->has_returned = true;
             return true;
+        case STMT_REPLY: {
+            Value resp = eval_expression(interp, stmt->reply_stmt.response_expr);
+            printf("[HTTP Reply %d] ", stmt->reply_stmt.status_code);
+            if (resp.kind == VAL_STRING) printf("%s\n", resp.str_val);
+            else if (resp.kind == VAL_INT) printf("%ld\n", resp.int_val);
+            else printf("ok\n");
+
+            interp->return_value = resp;
+            interp->has_returned = true;
+            return true;
+        }
         case STMT_IF: {
             Value cond = eval_expression(interp, stmt->if_stmt.condition);
             bool cond_true = (cond.kind == VAL_BOOL && cond.bool_val) || (cond.kind == VAL_INT && cond.int_val != 0);
@@ -246,7 +267,14 @@ bool eval_statement(Interpreter *interp, Stmt *stmt) {
             return true;
         }
         case STMT_FUNCTION_DECL:
-            // Function stored in program AST
+            return true;
+        case STMT_COMPONENT_DECL:
+            printf("[Registering Frontend Component: %s]\n", stmt->component_decl.name);
+            eval_statement(interp, stmt->component_decl.render_body);
+            return true;
+        case STMT_ROUTE_DECL:
+            printf("[Registering Server Route: %s %s]\n", stmt->route_decl.method, stmt->route_decl.path);
+            eval_statement(interp, stmt->route_decl.handler_body);
             return true;
     }
 

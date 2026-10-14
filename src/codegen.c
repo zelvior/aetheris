@@ -31,6 +31,9 @@ static void codegen_expr(Codegen *cg, Expr *expr) {
         case EXPR_IDENTIFIER:
             fprintf(cg->out, "%s", expr->identifier_name);
             break;
+        case EXPR_SHOW:
+            fprintf(cg->out, "aeth_ui_render_widget(\"%s\")", expr->show.widget_name);
+            break;
         case EXPR_UNARY:
             if (expr->unary.op == TOKEN_MINUS) fprintf(cg->out, "-");
             else if (expr->unary.op == TOKEN_LOGICAL_NOT) fprintf(cg->out, "!");
@@ -131,6 +134,11 @@ static void codegen_stmt(Codegen *cg, Stmt *stmt) {
             }
             fprintf(cg->out, ";\n");
             break;
+        case STMT_REPLY:
+            fprintf(cg->out, "aeth_http_reply(%d, ", stmt->reply_stmt.status_code);
+            codegen_expr(cg, stmt->reply_stmt.response_expr);
+            fprintf(cg->out, ");\n");
+            break;
         case STMT_IF:
             fprintf(cg->out, "if (");
             codegen_expr(cg, stmt->if_stmt.condition);
@@ -207,6 +215,36 @@ static void codegen_stmt(Codegen *cg, Stmt *stmt) {
                 }
             } else {
                 codegen_stmt(cg, stmt->func_decl.body);
+            }
+            cg->indent_level--;
+            write_indent(cg);
+            fprintf(cg->out, "}\n\n");
+            break;
+        }
+        case STMT_COMPONENT_DECL: {
+            fprintf(cg->out, "void aeth_component_%s() {\n", stmt->component_decl.name);
+            cg->indent_level++;
+            if (stmt->component_decl.render_body->type == STMT_BLOCK) {
+                for (size_t i = 0; i < stmt->component_decl.render_body->block.stmt_count; i++) {
+                    codegen_stmt(cg, stmt->component_decl.render_body->block.stmts[i]);
+                }
+            } else {
+                codegen_stmt(cg, stmt->component_decl.render_body);
+            }
+            cg->indent_level--;
+            write_indent(cg);
+            fprintf(cg->out, "}\n\n");
+            break;
+        }
+        case STMT_ROUTE_DECL: {
+            fprintf(cg->out, "void aeth_route_%s() {\n", stmt->route_decl.method);
+            cg->indent_level++;
+            if (stmt->route_decl.handler_body->type == STMT_BLOCK) {
+                for (size_t i = 0; i < stmt->route_decl.handler_body->block.stmt_count; i++) {
+                    codegen_stmt(cg, stmt->route_decl.handler_body->block.stmts[i]);
+                }
+            } else {
+                codegen_stmt(cg, stmt->route_decl.handler_body);
             }
             cg->indent_level--;
             write_indent(cg);

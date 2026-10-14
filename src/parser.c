@@ -110,6 +110,35 @@ static Expr* parse_variable(Parser *parser, Token token) {
     return ast_create_identifier(name_buf, loc);
 }
 
+static Expr* parse_show_expression(Parser *parser, Token token) {
+    SourceLocation loc = {parser->lexer->filename, token.line, token.column};
+    consume(parser, TOKEN_IDENTIFIER, "Expect widget or component name after 'show'.");
+    Token widget_tok = parser->previous;
+    char widget_name[256];
+    size_t len = widget_tok.length < 255 ? widget_tok.length : 255;
+    memcpy(widget_name, widget_tok.start, len);
+    widget_name[len] = '\0';
+
+    size_t cap = 8;
+    size_t count = 0;
+    Expr **props = (Expr**)malloc(sizeof(Expr*) * cap);
+
+    if (match_token(parser, TOKEN_LPAREN)) {
+        if (!check(parser, TOKEN_RPAREN)) {
+            do {
+                if (count >= cap) {
+                    cap *= 2;
+                    props = (Expr**)realloc(props, sizeof(Expr*) * cap);
+                }
+                props[count++] = parse_expression(parser);
+            } while (match_token(parser, TOKEN_COMMA));
+        }
+        consume(parser, TOKEN_RPAREN, "Expect ')' after widget properties.");
+    }
+
+    return ast_create_show(widget_name, props, count, loc);
+}
+
 static Expr* parse_grouping(Parser *parser, Token token) {
     (void)token;
     Expr *expr = parse_expression(parser);
@@ -182,6 +211,7 @@ static ParseRule rules[256] = {
     [TOKEN_TEXT_LITERAL]   = { parse_string, NULL, PREC_NONE },
     [TOKEN_BOOL_LITERAL]   = { parse_bool, NULL, PREC_NONE },
     [TOKEN_IDENTIFIER]     = { parse_variable, NULL, PREC_NONE },
+    [TOKEN_SHOW]           = { parse_show_expression, NULL, PREC_NONE },
     [TOKEN_LPAREN]         = { parse_grouping, parse_call_infix, PREC_CALL },
     [TOKEN_PLUS]           = { NULL, parse_binary, PREC_TERM },
     [TOKEN_MINUS]          = { parse_unary, parse_binary, PREC_TERM },
@@ -293,6 +323,10 @@ static Stmt* parse_block_statement(Parser *parser) {
     Stmt **stmts = (Stmt**)malloc(sizeof(Stmt*) * capacity);
 
     while (!check(parser, TOKEN_END) && !check(parser, TOKEN_EOF)) {
+        if (check(parser, TOKEN_TERMINATOR)) {
+            advance_parser(parser);
+            continue;
+        }
         if (count >= capacity) {
             capacity *= 2;
             stmts = (Stmt**)realloc(stmts, sizeof(Stmt*) * capacity);
@@ -317,6 +351,10 @@ static Stmt* parse_if_statement(Parser *parser) {
     Stmt *else_branch = NULL;
 
     while (!check(parser, TOKEN_END) && !check(parser, TOKEN_ELSE) && !check(parser, TOKEN_EOF)) {
+        if (check(parser, TOKEN_TERMINATOR)) {
+            advance_parser(parser);
+            continue;
+        }
         if (count >= capacity) {
             capacity *= 2;
             then_stmts = (Stmt**)realloc(then_stmts, sizeof(Stmt*) * capacity);
@@ -403,6 +441,64 @@ static Stmt* parse_function_declaration(Parser *parser) {
     return fn_stmt;
 }
 
+static Stmt* parse_component_declaration(Parser *parser) {
+    SourceLocation loc = {parser->lexer->filename, parser->previous.line, parser->previous.column};
+    consume(parser, TOKEN_IDENTIFIER, "Expect component name.");
+    Token name_tok = parser->previous;
+    char comp_name[256];
+    size_t len = name_tok.length < 255 ? name_tok.length : 255;
+    memcpy(comp_name, name_tok.start, len);
+    comp_name[len] = '\0';
+
+    match_token(parser, TOKEN_TERMINATOR);
+
+    Stmt *render_body = parse_block_statement(parser);
+    return ast_create_component_decl(comp_name, NULL, 0, render_body, loc);
+}
+
+static Stmt* parse_render_statement(Parser *parser) {
+    match_token(parser, TOKEN_TERMINATOR);
+    Stmt *render_body = parse_block_statement(parser);
+    return render_body;
+}
+
+static Stmt* parse_route_declaration(Parser *parser) {
+    SourceLocation loc = {parser->lexer->filename, parser->previous.line, parser->previous.column};
+    char method[16] = "GET";
+    if (parser->current.type == TOKEN_HTTP_GET) { advance_parser(parser); strcpy(method, "GET"); }
+    else if (parser->current.type == TOKEN_HTTP_POST) { advance_parser(parser); strcpy(method, "POST"); }
+    else if (parser->current.type == TOKEN_HTTP_PUT) { advance_parser(parser); strcpy(method, "PUT"); }
+    else if (parser->current.type == TOKEN_HTTP_DELETE) { advance_parser(parser); strcpy(method, "DELETE"); }
+
+    consume(parser, TOKEN_TEXT_LITERAL, "Expect route path string e.g. \"/api/v1/health\".");
+    Token path_tok = parser->previous;
+    char path_buf[256];
+    size_t len = path_tok.length < 255 ? path_tok.length : 255;
+    memcpy(path_buf, path_tok.start, len);
+    path_buf[len] = '\0';
+
+    match_token(parser, TOKEN_TERMINATOR);
+
+    Stmt *handler_body = parse_block_statement(parser);
+    return ast_create_route_decl(method, path_buf, handler_body, loc);
+}
+
+static Stmt* parse_reply_statement(Parser *parser) {
+    SourceLocation loc = {parser->lexer->filename, parser->previous.line, parser->previous.column};
+    Expr *resp_expr = parse_expression(parser);
+
+    int status_code = 200;
+    if (match_token(parser, TOKEN_WITH)) {
+        if (match_token(parser, TOKEN_STATUS)) {
+            consume(parser, TOKEN_INT_LITERAL, "Expect HTTP status integer e.g. 200.");
+            status_code = (int)parser->previous.value.int_val;
+        }
+    }
+
+    consume(parser, TOKEN_TERMINATOR, "Expect '~' statement terminator after reply.");
+    return ast_create_reply_stmt(resp_expr, status_code, loc);
+}
+
 Stmt* parse_statement(Parser *parser) {
     if (match_token(parser, TOKEN_LET)) {
         return parse_var_declaration(parser, false);
@@ -422,6 +518,18 @@ Stmt* parse_statement(Parser *parser) {
     if (match_token(parser, TOKEN_FN)) {
         return parse_function_declaration(parser);
     }
+    if (match_token(parser, TOKEN_COMPONENT)) {
+        return parse_component_declaration(parser);
+    }
+    if (match_token(parser, TOKEN_RENDER)) {
+        return parse_render_statement(parser);
+    }
+    if (match_token(parser, TOKEN_ROUTE)) {
+        return parse_route_declaration(parser);
+    }
+    if (match_token(parser, TOKEN_REPLY)) {
+        return parse_reply_statement(parser);
+    }
 
     // Default: Expression statement ending with ~
     SourceLocation loc = {parser->lexer->filename, parser->current.line, parser->current.column};
@@ -436,6 +544,10 @@ Program* parse_program(Parser *parser) {
     Stmt **stmts = (Stmt**)malloc(sizeof(Stmt*) * capacity);
 
     while (!check(parser, TOKEN_EOF)) {
+        if (check(parser, TOKEN_TERMINATOR)) {
+            advance_parser(parser);
+            continue;
+        }
         if (count >= capacity) {
             capacity *= 2;
             stmts = (Stmt**)realloc(stmts, sizeof(Stmt*) * capacity);
