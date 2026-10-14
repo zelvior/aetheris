@@ -28,7 +28,6 @@ typedef enum {
     TOKEN_CONTINUE,
     TOKEN_ASYNC,
     TOKEN_AWAIT,
-    TOKEN_SPAWN,
     TOKEN_TYPE,
     TOKEN_STRUCT,
     TOKEN_ENUM,
