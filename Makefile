@@ -2,12 +2,12 @@ CC = gcc
 CFLAGS = -Wall -Wextra -std=c11 -I. -Isrc -g
 LDFLAGS =
 
-SRC = src/lexer.c src/ast.c src/parser.c src/typechecker.c src/ir.c src/codegen.c src/interpreter.c
+SRC = src/lexer.c src/ast.c src/parser.c src/typechecker.c src/ir.c src/codegen.c src/interpreter.c src/webgen.c
 OBJ = $(SRC:src/%.c=build/obj/%.o)
 
 TARGET_BIN = build/bin/aeth
 
-.PHONY: all bootstrap test clean test-lexer test-parser test-typechecker test-ir test-codegen test-interpreter test-frontend-backend
+.PHONY: all bootstrap test clean test-lexer test-parser test-typechecker test-ir test-codegen test-interpreter test-frontend-backend test-webgen
 
 all: $(TARGET_BIN)
 
@@ -22,7 +22,7 @@ $(TARGET_BIN): src/main.c $(OBJ) | build_dirs
 build_dirs:
 	@mkdir -p build/bin build/obj
 
-test: test-lexer test-parser test-typechecker test-ir test-codegen test-interpreter test-frontend-backend
+test: test-lexer test-parser test-typechecker test-ir test-codegen test-interpreter test-frontend-backend test-webgen
 
 test-lexer: build/obj/lexer.o | build_dirs
 	$(CC) $(CFLAGS) tests/test_lexer.c build/obj/lexer.o -o build/bin/test_lexer $(LDFLAGS)
@@ -52,5 +52,9 @@ test-frontend-backend: build/obj/lexer.o build/obj/ast.o build/obj/parser.o buil
 	$(CC) $(CFLAGS) tests/test_frontend_backend.c build/obj/lexer.o build/obj/ast.o build/obj/parser.o build/obj/typechecker.o build/obj/codegen.o build/obj/interpreter.o -o build/bin/test_frontend_backend $(LDFLAGS)
 	./build/bin/test_frontend_backend
 
+test-webgen: build/obj/lexer.o build/obj/ast.o build/obj/parser.o build/obj/webgen.o | build_dirs
+	$(CC) $(CFLAGS) tests/test_webgen.c build/obj/lexer.o build/obj/ast.o build/obj/parser.o build/obj/webgen.o -o build/bin/test_webgen $(LDFLAGS)
+	./build/bin/test_webgen
+
 clean:
-	rm -rf build
+	rm -rf build dist

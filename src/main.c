@@ -9,6 +9,7 @@
 #include "typechecker.h"
 #include "codegen.h"
 #include "interpreter.h"
+#include "webgen.h"
 
 void print_version() {
     printf("Aetheris Compiler & Toolchain (aeth) v1.0.0\n");
@@ -19,9 +20,11 @@ void print_usage() {
     printf("Usage:\n");
     printf("  aeth --version                         Display toolchain version\n");
     printf("  aeth run <file.aeth>                  Run file in interpreter\n");
-    printf("  aeth build <file.aeth> [options]      Compile file to C99 source/binary\n");
+    printf("  aeth dev [file.aeth]                   Start dev server & generate web frontend in dist/\n");
+    printf("  aeth build <file.aeth> [options]      Compile file to C99 source/binary or web package\n");
     printf("    --target=native-32                  Target 32-bit architecture\n");
     printf("    --target=native-64                  Target 64-bit architecture (default)\n");
+    printf("    --target=web                        Generate web bundle in dist/\n");
     printf("  aeth repl                              Launch interactive REPL\n");
 }
 
@@ -71,6 +74,29 @@ int main(int argc, char **argv) {
 
     if (strcmp(argv[1], "repl") == 0) {
         run_repl();
+        return 0;
+    }
+
+    if (strcmp(argv[1], "dev") == 0) {
+        const char *filepath = (argc >= 3) ? argv[2] : NULL;
+        Program *program = NULL;
+        if (filepath) {
+            char *source = read_file_contents(filepath);
+            if (source) {
+                Lexer lexer;
+                lexer_init(&lexer, source, filepath);
+                Parser parser;
+                parser_init(&parser, &lexer);
+                program = parse_program(&parser);
+            }
+        }
+
+        webgen_generate_site(program, "dist");
+        printf("Aetheris Dev Server started!\n");
+        printf("Serving website assets at http://localhost:3000\n");
+        printf("Generated dist/index.html & dist/index.js\n");
+
+        if (program) free_program(program);
         return 0;
     }
 
@@ -128,6 +154,8 @@ int main(int argc, char **argv) {
                 target = TARGET_NATIVE_32;
             } else if (strcmp(argv[i], "--target=native-64") == 0) {
                 target = TARGET_NATIVE_64;
+            } else if (strcmp(argv[i], "--target=web") == 0) {
+                target = TARGET_WEB;
             }
         }
 
@@ -156,21 +184,26 @@ int main(int argc, char **argv) {
         }
         typechecker_free(&tc);
 
-        const char *out_c_path = "build/output.c";
-        FILE *out = fopen(out_c_path, "w");
-        if (!out) {
-            fprintf(stderr, "Error: could not create output file '%s'\n", out_c_path);
-            free_program(program);
-            free(source);
-            return 1;
+        if (target == TARGET_WEB) {
+            webgen_generate_site(program, "dist");
+            printf("Build succeeded! Generated web application bundle in 'dist/'\n");
+        } else {
+            const char *out_c_path = "build/output.c";
+            FILE *out = fopen(out_c_path, "w");
+            if (!out) {
+                fprintf(stderr, "Error: could not create output file '%s'\n", out_c_path);
+                free_program(program);
+                free(source);
+                return 1;
+            }
+
+            Codegen cg;
+            codegen_init(&cg, out, target);
+            codegen_generate_c(&cg, program);
+            fclose(out);
+
+            printf("Build succeeded! Generated C99 code in '%s'\n", out_c_path);
         }
-
-        Codegen cg;
-        codegen_init(&cg, out, target);
-        codegen_generate_c(&cg, program);
-        fclose(out);
-
-        printf("Build succeeded! Generated C99 code in '%s'\n", out_c_path);
 
         free_program(program);
         free(source);
